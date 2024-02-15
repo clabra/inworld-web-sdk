@@ -19,6 +19,7 @@ import {
   TriggerParameter,
 } from '../entities/inworld_packet.entity';
 import { ConnectionService } from './connection.service';
+import { SessionStateService } from './session_state.service';
 
 interface InworldConnectionServiceProps<
   InworldPacketT extends InworldPacket = InworldPacket,
@@ -35,8 +36,9 @@ export class InworldConnectionService<
   private connection: ConnectionService;
   private grpcAudioPlayer: GrpcAudioPlayback;
 
-  player: InworldPlayer;
-  recorder: InworldRecorder;
+  readonly player: InworldPlayer;
+  readonly recorder: InworldRecorder;
+  readonly sessionState: SessionStateService;
 
   constructor(props: InworldConnectionServiceProps<InworldPacketT>) {
     this.connection = props.connection;
@@ -66,6 +68,7 @@ export class InworldConnectionService<
       grpcAudioRecorder: props.grpcAudioRecorder,
       webRtcLoopbackBiDiSession: props.webRtcLoopbackBiDiSession,
     });
+    this.sessionState = new SessionStateService(this.connection);
   }
 
   async getSessionState() {
@@ -77,10 +80,15 @@ export class InworldConnectionService<
   }
 
   async close() {
-    this.connection.close();
+    // Stop recorder and close connection
     this.recorder.stop();
+    this.connection.close();
+
+    // Stop player and clear all audio chunks
     await this.player.stop();
     this.player.clear();
+
+    this.sessionState.destroy();
   }
 
   isActive() {

@@ -167,6 +167,8 @@ function App() {
 
       setConnection(service.connection);
       setCharacters(characters);
+
+      service.connection?.sendTrigger('inworld.debug.error');
     },
     [
       chatHistory,

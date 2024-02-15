@@ -6,3 +6,11 @@ export const isIOSMobile = (): boolean =>
 
 export const interpolate = (p: number): number =>
   0.5 - Math.cos(p * Math.PI) / 2;
+
+export const safeJSONParse = <T = any>(str: string): T | undefined => {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return undefined;
+  }
+};

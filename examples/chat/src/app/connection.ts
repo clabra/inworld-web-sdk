@@ -30,6 +30,11 @@ export class InworldService {
   constructor(props: InworldServiceProps) {
     const client = new InworldClient()
       .setConfiguration({
+        connection: {
+          gateway: {
+            hostname: 'studio.dev.inworld.ai',
+          },
+        },
         capabilities: props.capabilities,
         audioPlayback: props.audioPlayback,
       })
@@ -41,7 +46,16 @@ export class InworldService {
       .setOnMessage(props.onMessage)
       .setOnPhoneme(props.onPhoneme)
       .setOnHistoryChange(props.onHistoryChange)
-      .setOnDisconnect(props.onDisconnect);
+      .setOnDisconnect(props.onDisconnect)
+      .setExtension({
+        beforeLoadScene: (request) => {
+          request.capabilities = {
+            ...request.capabilities,
+            debugInfo: true,
+          };
+          return request;
+        },
+      });
 
     if (props.continuation) {
       client.setSessionContinuation(props.continuation);

@@ -10,6 +10,7 @@ import {
   Gateway,
   GenerateSessionTokenFn,
   InternalClientConfiguration,
+  InworldError,
   OnPhomeneFn,
   User,
 } from '../common/data_structures';
@@ -39,7 +40,7 @@ export class InworldClient<
   private generateSessionToken: GenerateSessionTokenFn;
 
   private onDisconnect: () => Awaitable<void> | undefined;
-  private onError: ((err: Event | Error) => Awaitable<void>) | undefined;
+  private onError: ((err: InworldError) => Awaitable<void>) | undefined;
   private onMessage: ((message: InworldPacketT) => Awaitable<void>) | undefined;
   private onReady: (() => Awaitable<void>) | undefined;
   private onHistoryChange:
@@ -98,7 +99,7 @@ export class InworldClient<
     return this;
   }
 
-  setOnError(fn?: (err: Error) => Awaitable<void>) {
+  setOnError(fn?: (err: InworldError) => Awaitable<void>) {
     this.onError = fn;
 
     return this;

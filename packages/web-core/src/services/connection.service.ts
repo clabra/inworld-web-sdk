@@ -6,7 +6,7 @@ import {
   ClientRequest,
   LoadSceneResponse,
 } from '../../proto/ai/inworld/engine/world-engine.pb';
-import { InworldPacket as ProtoPacket } from '../../proto/ai/inworld/packets/packets.pb';
+import { DEFAULT_SESSION_STATE_KEY } from '../common/constants';
 import {
   AudioSessionState,
   Awaitable,
@@ -16,6 +16,7 @@ import {
   Extension,
   GenerateSessionTokenFn,
   InternalClientConfiguration,
+  InworldError,
   SendPacketParams,
   TtsPlaybackAction,
   User,
@@ -38,7 +39,11 @@ import { SessionContinuation } from '../entities/continuation/session_continuati
 import { InworldPacket } from '../entities/inworld_packet.entity';
 import { SessionToken } from '../entities/session_token.entity';
 import { EventFactory } from '../factories/event';
-import { StateSerializationService } from './pb/state_serialization.service';
+import { InworldPacket as ProtoPacket } from './../../proto/ai/inworld/packets/packets.pb';
+import {
+  SessionState,
+  StateSerializationService,
+} from './pb/state_serialization.service';
 import { WorldEngineService } from './pb/world_engine.service';
 
 interface ConnectionProps<InworldPacketT, HistoryItemT> {
@@ -48,7 +53,7 @@ interface ConnectionProps<InworldPacketT, HistoryItemT> {
   config?: InternalClientConfiguration;
   sessionContinuation?: SessionContinuation;
   onReady?: () => Awaitable<void>;
-  onError?: (err: Event | Error) => Awaitable<void>;
+  onError?: (err: InworldError) => Awaitable<void>;
   onMessage?: (packet: InworldPacketT) => Awaitable<void>;
   onDisconnect?: () => Awaitable<void>;
   onInterruption?: (props: CancelResponsesProps) => Awaitable<void>;
@@ -61,6 +66,10 @@ interface ConnectionProps<InworldPacketT, HistoryItemT> {
   generateSessionToken: GenerateSessionTokenFn;
   extension?: Extension<InworldPacketT, HistoryItemT>;
 }
+
+// TODO: Use more appriopriate error checks
+const sessionExpiredRegExp = new RegExp('Session (.*?) expired or invalid');
+const invalidToken = 'invalid JWT token';
 
 export class ConnectionService<
   InworldPacketT extends InworldPacket = InworldPacket,
@@ -87,12 +96,13 @@ export class ConnectionService<
   private stateService = new StateSerializationService();
   private engineService = new WorldEngineService<InworldPacketT>();
 
-  private onDisconnect: (() => Awaitable<void>) | undefined;
-  private onError: (err: Event | Error) => Awaitable<void>;
-  private onMessage: ((packet: ProtoPacket) => Awaitable<void>) | undefined;
-  private onReady: (() => Awaitable<void>) | undefined;
+  onDisconnect: (() => Awaitable<void>) | undefined;
+  onError: (err: InworldError) => Awaitable<void>;
+  onMessage: ((packet: ProtoPacket) => Awaitable<void>) | undefined;
+  onReady: (() => Awaitable<void>) | undefined;
 
   private cancelResponses: CancelResponses = {};
+  private packetsInProgress: { [key: string]: () => ProtoPacket } = {};
   private history: InworldHistory;
   private extension: Extension<InworldPacketT, HistoryItemT>;
 
@@ -179,12 +189,12 @@ export class ConnectionService<
 
   async open() {
     try {
+      const packets = this.getPacketsToSentOnOpen();
+
       await this.loadScene();
 
       if (this.state === ConnectionState.LOADED) {
         this.state = ConnectionState.ACTIVATING;
-
-        const packets = this.getPacketsToSentOnOpen();
 
         await this.connection.open({
           session: this.session,
@@ -311,6 +321,10 @@ export class ConnectionService<
         if (packet.isText()) {
           await this.interruptByPacket(packet);
         }
+
+        if (packet.isText() || packet.isAudio()) {
+          this.packetsInProgress[packet.packetId.interactionId] = getPacket;
+        }
       },
     });
 
@@ -335,10 +349,18 @@ export class ConnectionService<
       });
 
       if (!this.scene) {
+        const saved = localStorage.getItem(DEFAULT_SESSION_STATE_KEY);
+        const sessionState = saved
+          ? (JSON.parse(saved) as SessionState)
+          : undefined;
+        const sessionContinuation = sessionState?.state
+          ? new SessionContinuation({ previousState: sessionState.state })
+          : this.connectionProps.sessionContinuation;
+
         this.scene = await this.engineService.loadScene({
           config: this.connectionProps.config,
           session: this.session,
-          sessionContinuation: this.connectionProps.sessionContinuation,
+          sessionContinuation,
           extension: this.extension,
           name,
           user,
@@ -446,13 +468,38 @@ export class ConnectionService<
       await onDisconnect?.();
     };
 
-    this.onError = onError ?? ((event: Event | Error) => console.error(event));
+    this.onError = async (err: InworldError) => {
+      if (onError) {
+        onError(err);
+      } else {
+        console.error(err);
+      }
+
+      const { message } = err;
+
+      if (
+        (sessionExpiredRegExp.test(message) || invalidToken === message) &&
+        this.isAutoReconnected()
+      ) {
+        this.session = undefined;
+        this.scene = undefined;
+        this.state = ConnectionState.INACTIVE;
+
+        await this.open();
+      }
+    };
 
     this.onMessage = async (packet: ProtoPacket) => {
       const { onMessage, grpcAudioPlayer } = this.connectionProps;
 
       const inworldPacket = this.extension.convertPacketFromProto(packet);
       const interactionId = inworldPacket.packetId.interactionId;
+
+      // Delete packet from queue on interaction end.
+      // It means that packet was successfully applied on the server side.
+      if (inworldPacket.isInteractionEnd()) {
+        delete this.packetsInProgress[interactionId];
+      }
 
       // Don't pass text packet outside for interrupred interaction.
       if (
@@ -513,6 +560,10 @@ export class ConnectionService<
       // Pass packet to external callback.
       onMessage?.(inworldPacket);
     };
+  }
+
+  hasPacketsInProgress() {
+    return !!Object.keys(this.packetsInProgress).length;
   }
 
   private initializeConnection() {
@@ -637,6 +688,25 @@ export class ConnectionService<
           getPacket: () => this.getEventFactory().ttsPlaybackMute(true),
         });
       }
+    }
+
+    if (this.state === ConnectionState.RECONNECTING) {
+      const notAppliedPackets = { ...this.packetsInProgress };
+
+      this.packetsInProgress = {};
+
+      Object.keys(notAppliedPackets).forEach((interactionId) => {
+        const getPacket = notAppliedPackets[interactionId];
+
+        packets.push({
+          getPacket,
+          afterWriting: (packet: InworldPacketT) => {
+            if (packet.isText() || packet.isAudio()) {
+              this.packetsInProgress[packet.packetId.interactionId] = getPacket;
+            }
+          },
+        });
+      });
     }
 
     return packets;

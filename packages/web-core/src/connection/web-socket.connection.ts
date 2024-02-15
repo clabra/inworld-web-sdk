@@ -2,7 +2,9 @@ import { InworldPacket as ProtoPacket } from '../../proto/ai/inworld/packets/pac
 import {
   Awaitable,
   InternalClientConfiguration,
+  InworldError,
 } from '../common/data_structures';
+import { safeJSONParse } from '../common/helpers';
 import { InworldPacket } from '../entities/inworld_packet.entity';
 import { SessionToken } from '../entities/session_token.entity';
 
@@ -20,7 +22,7 @@ interface ConnectionProps {
   config?: InternalClientConfiguration;
   onDisconnect?: () => Awaitable<void>;
   onReady?: () => Awaitable<void>;
-  onError?: (err: Event | Error) => Awaitable<void>;
+  onError?: (err: InworldError) => Awaitable<void>;
   onMessage?: (packet: ProtoPacket) => Awaitable<void>;
 }
 
@@ -65,8 +67,7 @@ export class WebSocketConnection<
     packets,
     convertPacketFromProto,
   }: OpenConnectionProps<InworldPacketT>) {
-    const { config, onError, onDisconnect, onMessage, onReady } =
-      this.connectionProps;
+    const { config } = this.connectionProps;
 
     if (packets?.length) {
       this.packetQueue = [...packets, ...this.packetQueue];
@@ -76,28 +77,18 @@ export class WebSocketConnection<
     this.ws = this.createWebSocket({
       config,
       session,
-      onError,
-      onDisconnect,
-      ...(onReady && { onReady }),
-      ...(onMessage && { onMessage }),
     });
   }
 
   close() {
-    if (this.connectionProps.onError) {
-      this.ws?.removeEventListener('error', this.connectionProps.onError);
-    }
-
-    if (this.connectionProps.onDisconnect) {
-      this.ws?.removeEventListener('close', this.connectionProps.onDisconnect);
-    }
-
+    this.ws?.removeEventListener('error', this.onError);
+    this.ws?.removeEventListener('close', this.connectionProps.onDisconnect);
     this.ws?.removeEventListener('open', this.onReady);
     this.ws?.removeEventListener('message', this.onMessage);
 
     if (this.isActive()) {
       this.ws.close();
-      this.connectionProps.onDisconnect?.();
+      this.connectionProps.onDisconnect();
     }
 
     this.ws = null;
@@ -119,7 +110,7 @@ export class WebSocketConnection<
   }
 
   private createWebSocket(props: SessionProps) {
-    const { config, session, onDisconnect, onError } = props;
+    const { config, session } = props;
     const { hostname, ssl } = config.connection.gateway;
 
     const url = `${
@@ -129,31 +120,20 @@ export class WebSocketConnection<
     const ws = new WebSocket(url, [session.type, session.token]);
 
     ws.addEventListener('open', this.onReady.bind(this));
-
     ws.addEventListener('message', this.onMessage.bind(this));
-
-    if (onDisconnect) {
-      ws.addEventListener('close', onDisconnect);
-    }
-
-    if (onError) {
-      ws.addEventListener('error', onError);
-    }
+    ws.addEventListener('error', this.onError.bind(this));
+    ws.addEventListener('close', this.connectionProps.onDisconnect);
 
     return ws;
   }
 
   private onMessage(event: MessageEvent) {
-    const { onError, onMessage } = this.connectionProps;
+    const payload = safeJSONParse(event.data);
 
-    const payload = JSON.parse(event.data);
-
-    if (payload.error && onError) {
-      onError(payload.error);
-    }
-
-    if (!payload.error && onMessage) {
-      onMessage(payload.result as ProtoPacket);
+    if (payload.error) {
+      this.connectionProps.onError(payload.error as InworldError);
+    } else {
+      this.connectionProps.onMessage(payload.result as ProtoPacket);
     }
   }
 
@@ -162,7 +142,11 @@ export class WebSocketConnection<
       this.packetQueue.forEach((item) => this.write(item));
       this.packetQueue = [];
 
-      this.connectionProps.onReady?.();
+      this.connectionProps.onReady();
     }, 0);
+  }
+
+  private onError(e: Event) {
+    this.connectionProps.onError(new Error(e.toString()) as InworldError);
   }
 }
