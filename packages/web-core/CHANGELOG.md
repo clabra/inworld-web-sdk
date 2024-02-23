@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+- Allow to like, dislike or undo feedback
+
 ## [2.3.1] - 2024-02-12
 
 ### Fixed
