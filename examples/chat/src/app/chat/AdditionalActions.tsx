@@ -1,5 +1,12 @@
 import { InworldConnectionService, InworldTriggers } from '@inworld/web-core';
-import { AddReaction, MoreVert, Send, Start } from '@mui/icons-material';
+import {
+  AddReaction,
+  MoreVert,
+  MovieFilter,
+  PersonAddAlt1,
+  Send,
+  Start,
+} from '@mui/icons-material';
 import {
   Box,
   Dialog,
@@ -17,6 +24,7 @@ import { INWORLD_COLORS } from '../helpers/colors';
 import { CHAT_VIEW } from '../types';
 
 export interface AdditionalActionsProps {
+  onClose: () => void;
   chatView: CHAT_VIEW;
   connection: InworldConnectionService;
   playWorkaroundSound: () => void;
@@ -27,6 +35,10 @@ export const AdditionalActions = (props: AdditionalActionsProps) => {
   const [narration, setNarration] = useState('');
   const [narratedActionDialogOpen, setNarratedActionDialogOpen] =
     useState(false);
+  const [sceneName, setSceneName] = useState('');
+  const [characterName, setCharacterName] = useState('');
+  const [changeSceneDialogOpen, setChangeSceneDialogOpen] = useState(false);
+  const [addCharacterDialogOpen, setAddCharacterDialogOpen] = useState(false);
 
   const onOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setEl(event.currentTarget);
@@ -55,8 +67,55 @@ export const AdditionalActions = (props: AdditionalActionsProps) => {
 
       setNarration('');
       setNarratedActionDialogOpen(false);
+      onClose();
     }
   }, [props.connection, props.playWorkaroundSound, narration]);
+
+  const handleSceneChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSceneName(e.target.value);
+    },
+    [],
+  );
+
+  const handleSceneChangeDialog = useCallback(() => {
+    setChangeSceneDialogOpen(true);
+  }, []);
+
+  const handleSendSceneChange = useCallback(async () => {
+    if (sceneName) {
+      props.playWorkaroundSound();
+
+      await props.connection?.changeScene(sceneName);
+
+      setSceneName('');
+      setChangeSceneDialogOpen(false);
+      onClose();
+    }
+  }, [props.connection, props.playWorkaroundSound, sceneName]);
+
+  const handleAddCharacter = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setCharacterName(e.target.value);
+    },
+    [],
+  );
+
+  const handleAddCharacterDialog = useCallback(() => {
+    setAddCharacterDialogOpen(true);
+  }, []);
+
+  const handleSendAddCharacter = useCallback(async () => {
+    if (characterName) {
+      props.playWorkaroundSound();
+
+      await props.connection?.addCharacters([characterName]);
+
+      setCharacterName('');
+      setAddCharacterDialogOpen(false);
+      onClose();
+    }
+  }, [props.connection, props.playWorkaroundSound, characterName]);
 
   const handleNextTurn = useCallback(() => {
     props.playWorkaroundSound();
@@ -96,6 +155,16 @@ export const AdditionalActions = (props: AdditionalActionsProps) => {
                 <AddReaction fontSize="small" />
               </IconButton>
             </Tooltip>
+            <Tooltip title="Change scene" placement="left">
+              <IconButton onClick={handleSceneChangeDialog}>
+                <MovieFilter fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Add character" placement="left">
+              <IconButton onClick={handleAddCharacterDialog}>
+                <PersonAddAlt1 fontSize="small" />
+              </IconButton>
+            </Tooltip>
             {props.chatView === CHAT_VIEW.MULTI_AGENT_TEXT ? (
               <Tooltip title="Next agents turn" placement="left">
                 <IconButton onClick={handleNextTurn}>
@@ -130,7 +199,58 @@ export const AdditionalActions = (props: AdditionalActionsProps) => {
                     </IconButton>
                   </InputAdornment>
                 ),
-                disableUnderline: true,
+              }}
+            />
+          </Box>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={changeSceneDialogOpen}
+        onClose={() => setChangeSceneDialogOpen(false)}
+      >
+        <DialogContent>
+          <Box sx={{ m: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Scene name"
+              onChange={handleSceneChange}
+              placeholder="Enter scene name"
+              InputLabelProps={{ shrink: true }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={handleSendSceneChange}>
+                      <Send />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={addCharacterDialogOpen}
+        onClose={() => setAddCharacterDialogOpen(false)}
+      >
+        <DialogContent>
+          <Box sx={{ m: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Character name"
+              onChange={handleAddCharacter}
+              placeholder="Enter character name"
+              InputLabelProps={{ shrink: true }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={handleSendAddCharacter}>
+                      <Send />
+                    </IconButton>
+                  </InputAdornment>
+                ),
               }}
             />
           </Box>
