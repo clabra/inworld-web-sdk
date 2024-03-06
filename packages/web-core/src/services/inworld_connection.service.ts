@@ -18,6 +18,7 @@ import {
   InworldPacket,
   TriggerParameter,
 } from '../entities/inworld_packet.entity';
+import { EventFactory } from '../factories/event';
 import { ConnectionService } from './connection.service';
 
 interface InworldConnectionServiceProps<
@@ -226,6 +227,16 @@ export class InworldConnectionService<
         .getEventFactory()
         .narratedAction(text, params?.characters),
     );
+  }
+
+  async changeScene(name: string) {
+    this.connection.setNextSceneName(name);
+
+    return this.connection.send(() => EventFactory.loadScene(name));
+  }
+
+  async addCharacters(names: string[]) {
+    return this.connection.send(() => EventFactory.loadCharacters(names));
   }
 
   async sendCustomPacket(getPacket: () => ProtoPacket) {

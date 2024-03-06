@@ -4,6 +4,10 @@
 
 - Change internal way to open session
 
+### Added
+
+- Allow to change scene and add characters to current scene
+
 ## [2.4.1] - 2024-03-06
 
 ### Fixed

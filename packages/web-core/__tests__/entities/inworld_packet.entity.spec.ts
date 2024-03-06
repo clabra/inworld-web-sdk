@@ -9,7 +9,7 @@ import {
   Routing,
   TextEvent,
 } from '../../src/entities/inworld_packet.entity';
-import { getPacketId } from '../helpers';
+import { agents, convertAgentsToCharacters, getPacketId } from '../helpers';
 
 const packetId = getPacketId();
 const packetIdWithCorrelation = {
@@ -134,6 +134,76 @@ test('should get cancel response packet fields', () => {
   expect(packet.routing).toEqual(routing);
   expect(packet.date).toEqual(date);
   expect(packet.packetId).toEqual(packetId);
+});
+
+describe('scene mutation', () => {
+  const characters = convertAgentsToCharacters(agents);
+
+  test('should get scene change event request', () => {
+    const name = v4();
+    const packet = new InworldPacket({
+      packetId,
+      routing,
+      date,
+      type: InworldPacketType.SCENE_MUTATION_REQUEST,
+      sceneMutation: { name },
+    });
+
+    expect(packet.isSceneMutationRequest()).toEqual(true);
+    expect(packet.routing).toEqual(routing);
+    expect(packet.date).toEqual(date);
+    expect(packet.packetId).toEqual(packetId);
+    expect(packet.sceneMutation.name).toEqual(name);
+  });
+
+  test('should get character add event request', () => {
+    const characterNames = [v4(), v4()];
+    const packet = new InworldPacket({
+      packetId,
+      routing,
+      date,
+      type: InworldPacketType.SCENE_MUTATION_REQUEST,
+      sceneMutation: { characterNames },
+    });
+
+    expect(packet.isSceneMutationRequest()).toEqual(true);
+    expect(packet.routing).toEqual(routing);
+    expect(packet.date).toEqual(date);
+    expect(packet.packetId).toEqual(packetId);
+    expect(packet.sceneMutation.characterNames).toEqual(characterNames);
+  });
+
+  test('should get scene change event response', () => {
+    const packet = new InworldPacket({
+      packetId,
+      routing,
+      date,
+      type: InworldPacketType.SCENE_MUTATION_RESPONSE,
+      sceneMutation: { loadedCharacters: characters },
+    });
+
+    expect(packet.isSceneMutationResponse()).toEqual(true);
+    expect(packet.routing).toEqual(routing);
+    expect(packet.date).toEqual(date);
+    expect(packet.packetId).toEqual(packetId);
+    expect(packet.sceneMutation.loadedCharacters).toEqual(characters);
+  });
+
+  test('should get character add event response', () => {
+    const packet = new InworldPacket({
+      packetId,
+      routing,
+      date,
+      type: InworldPacketType.SCENE_MUTATION_RESPONSE,
+      sceneMutation: { addedCharacters: characters },
+    });
+
+    expect(packet.isSceneMutationResponse()).toEqual(true);
+    expect(packet.routing).toEqual(routing);
+    expect(packet.date).toEqual(date);
+    expect(packet.packetId).toEqual(packetId);
+    expect(packet.sceneMutation.addedCharacters).toEqual(characters);
+  });
 });
 
 describe('control', () => {

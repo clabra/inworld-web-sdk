@@ -168,9 +168,7 @@ export const setTimeoutMock = (callback: any) => {
 
 export const agents = [createAgent(), createAgent()];
 export const sessionControlResponseEvent = {
-  loadedScene: {
-    agentsList: agents,
-  },
+  loadedScene: { agents },
 };
 export const historyResponseEvent = {
   sessionHistory: {
